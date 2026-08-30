@@ -1,6 +1,15 @@
-train: data_downloaded/train/images
-val: data_downloaded/valid/images
-test: data_downloaded/test/images
+# Crime Detection Dataset Config (Roboflow Weapon Detection v16)
+path: /home/harish/weapon-detection.v16-remapped-train-80-val-20.yolov5pytorch
+train: train/images
+val: valid/images
+test: valid/images
 
 nc: 3
 names: ['gun', 'heavy-weapon', 'knife']
+
+roboflow:
+  workspace: yolov7test-u13vc
+  project: weapon-detection-m7qso
+  version: 16
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/yolov7test-u13vc/weapon-detection-m7qso/dataset/16

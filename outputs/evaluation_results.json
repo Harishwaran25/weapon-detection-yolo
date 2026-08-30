@@ -1,0 +1,30 @@
+{
+  "overall_precision": 0.9299,
+  "overall_recall": 0.9051,
+  "mAP_50": 0.9253,
+  "mAP_50_95": 0.6671,
+  "total_test_frames": 915,
+  "classes": {
+    "gun": {
+      "precision": 0.942,
+      "recall": 0.915,
+      "map50": 0.938,
+      "map50_95": 0.684,
+      "support": 420
+    },
+    "knife": {
+      "precision": 0.895,
+      "recall": 0.872,
+      "map50": 0.891,
+      "map50_95": 0.612,
+      "support": 310
+    },
+    "heavy-weapon": {
+      "precision": 0.961,
+      "recall": 0.938,
+      "map50": 0.954,
+      "map50_95": 0.721,
+      "support": 185
+    }
+  }
+}

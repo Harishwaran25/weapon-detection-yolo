@@ -10,3 +10,8 @@ __pycache__/
 .venv/
 runs/
 data_downloaded/
+dashboard/node_modules/
+dashboard/dist/
+datasets/
+models/best-int8.tflite
+models/best_saved_model/
