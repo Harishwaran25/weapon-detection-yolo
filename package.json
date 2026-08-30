@@ -1,0 +1,17 @@
+{
+  "name": "crime-detection-yolo",
+  "version": "1.0.0",
+  "description": "Real-time AI surveillance system for crime detection using YOLOv5 and TFLite edge deployment",
+  "scripts": {
+    "dev": "npm --prefix dashboard run dev",
+    "build": "npm --prefix dashboard run build"
+  },
+  "keywords": [
+    "yolov5",
+    "surveillance",
+    "crime-detection",
+    "edge-computing",
+    "raspberry-pi",
+    "tflite"
+  ]
+}
