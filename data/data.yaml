@@ -1,0 +1,6 @@
+train: data_downloaded/train/images
+val: data_downloaded/valid/images
+test: data_downloaded/test/images
+
+nc: 3
+names: ['gun', 'heavy-weapon', 'knife']
