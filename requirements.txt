@@ -1,0 +1,7 @@
+torch>=1.13
+torchvision>=0.14
+opencv-python>=4.7
+pandas>=1.5
+numpy>=1.23
+Pillow>=9.4
+tensorflow>=2.11   # used for TFLite export path (Raspberry Pi deployment)

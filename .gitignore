@@ -1,0 +1,12 @@
+yolov5/
+*.pt
+!models/.gitkeep
+outputs/*.jpg
+outputs/alerts.log
+data/images/
+data/labels/
+__pycache__/
+*.pyc
+.venv/
+runs/
+data_downloaded/
