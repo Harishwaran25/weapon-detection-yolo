@@ -1,15 +1,22 @@
 {
   "name": "crime-detection-yolo",
-  "version": "1.0.0",
-  "description": "Real-time AI surveillance system for crime detection using YOLOv5 and TFLite edge deployment",
+  "version": "2.0.0",
+  "description": "Real-time AI surveillance system for crime detection using YOLOv5, PyTorch, FastAPI, and React Dashboard",
   "scripts": {
     "dev": "npm --prefix dashboard run dev",
-    "build": "npm --prefix dashboard run build"
+    "build": "npm --prefix dashboard run build",
+    "server": "python3 -m uvicorn src.server:app --host 0.0.0.0 --port 8000 --reload",
+    "start": "python3 -m uvicorn src.server:app --host 0.0.0.0 --port 8000",
+    "evaluate": "python3 src/evaluate.py --weights models/best.pt --data data/data.yaml",
+    "detect": "python3 src/detect.py"
   },
   "keywords": [
     "yolov5",
     "surveillance",
     "crime-detection",
+    "weapon-detection",
+    "fastapi",
+    "react",
     "edge-computing",
     "raspberry-pi",
     "tflite"

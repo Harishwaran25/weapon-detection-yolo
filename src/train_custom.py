@@ -13,17 +13,18 @@ from pathlib import Path
 
 YOLOV5_DIR = Path(__file__).resolve().parent.parent / "yolov5"
 
-
 def main():
+    import torch
+    default_dev = "0" if torch.cuda.is_available() else "cpu"
     parser = argparse.ArgumentParser(description="Train YOLOv5 on Roboflow Crime/Weapon Dataset")
     parser.add_argument("--data", type=str, default="data/data.yaml", help="Path to dataset yaml")
-    parser.add_argument("--weights", type=str, default="yolov5s.pt", help="Initial weights to fine-tune from")
-    parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
+    parser.add_argument("--weights", type=str, default="models/best.pt", help="Initial weights to fine-tune from")
+    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
-    parser.add_argument("--img", type=int, default=640, help="Input image size")
-    parser.add_argument("--device", type=str, default="", help="CUDA device '0', '0,1,2,3', or 'cpu'")
+    parser.add_argument("--img", type=int, default=512, help="Input image size")
+    parser.add_argument("--device", type=str, default=default_dev, help="CUDA device '0', '0,1,2,3', or 'cpu'")
     parser.add_argument("--project", type=str, default="runs/train", help="Save project directory")
-    parser.add_argument("--name", type=str, default="weapon-detection-yolo", help="Save experiment name")
+    parser.add_argument("--name", type=str, default="weapon-finetune", help="Save experiment name")
     args = parser.parse_args()
 
     if not YOLOV5_DIR.exists():

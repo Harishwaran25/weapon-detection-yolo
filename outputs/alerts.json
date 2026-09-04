@@ -1,0 +1,102 @@
+[
+  {
+    "id": "ALT-969549",
+    "event_id": "ALT-969549",
+    "timestamp": "2026-09-04 09:22:49",
+    "epoch": 1788493969549,
+    "cameraId": "SAMPLE_sample_gun_1.jpg",
+    "locationName": "Surveillance Stream",
+    "threatClass": "gun",
+    "confidence": 0.8232,
+    "severity": "CRITICAL",
+    "status": "ACTIVE",
+    "snapshotUrl": "/api/snapshots/sample_threat_1788493969548.jpg",
+    "snapshot_path": "outputs/sample_threat_1788493969548.jpg",
+    "bbox": [
+      203,
+      275,
+      274,
+      350
+    ]
+  },
+  {
+    "id": "ALT-928183",
+    "event_id": "ALT-928183",
+    "timestamp": "2026-09-04 09:22:08",
+    "epoch": 1788493928183,
+    "cameraId": "SAMPLE_sample_gun_1.jpg",
+    "locationName": "Surveillance Stream",
+    "threatClass": "gun",
+    "confidence": 0.8232,
+    "severity": "CRITICAL",
+    "status": "ACTIVE",
+    "snapshotUrl": "/api/snapshots/sample_threat_1788493928181.jpg",
+    "snapshot_path": "outputs/sample_threat_1788493928181.jpg",
+    "bbox": [
+      203,
+      275,
+      274,
+      350
+    ]
+  },
+  {
+    "id": "ALT-928126",
+    "event_id": "ALT-928126",
+    "timestamp": "2026-09-04 09:22:08",
+    "epoch": 1788493928126,
+    "cameraId": "SAMPLE_sample_gun_1.jpg",
+    "locationName": "Surveillance Stream",
+    "threatClass": "gun",
+    "confidence": 0.8232,
+    "severity": "CRITICAL",
+    "status": "ACTIVE",
+    "snapshotUrl": "/api/snapshots/sample_threat_1788493928125.jpg",
+    "snapshot_path": "outputs/sample_threat_1788493928125.jpg",
+    "bbox": [
+      203,
+      275,
+      274,
+      350
+    ]
+  },
+  {
+    "id": "ALT-722735",
+    "event_id": "ALT-722735",
+    "timestamp": "2026-09-04 09:18:42",
+    "epoch": 1788493722735,
+    "cameraId": "SAMPLE_sample_gun_2.jpg",
+    "locationName": "Surveillance Stream",
+    "threatClass": "gun",
+    "confidence": 0.6882,
+    "severity": "CRITICAL",
+    "status": "ACTIVE",
+    "snapshotUrl": "/api/snapshots/sample_threat_1788493722734.jpg",
+    "snapshot_path": "outputs/sample_threat_1788493722734.jpg",
+    "bbox": [
+      180,
+      318,
+      258,
+      387
+    ]
+  },
+  {
+    "id": "ALT-705581",
+    "event_id": "ALT-705581",
+    "timestamp": "2026-09-04 09:18:25",
+    "epoch": 1788493705581,
+    "cameraId": "SAMPLE_sample_gun_1.jpg",
+    "locationName": "Surveillance Stream",
+    "threatClass": "gun",
+    "confidence": 0.8232,
+    "severity": "CRITICAL",
+    "status": "ACTIVE",
+    "snapshotUrl": "/api/snapshots/sample_threat_1788493705580.jpg",
+    "snapshot_path": "outputs/sample_threat_1788493705580.jpg",
+    "bbox": [
+      203,
+      275,
+      274,
+      350
+    ]
+  }
+]
