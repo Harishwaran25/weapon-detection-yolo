@@ -4,6 +4,11 @@ Multi-Channel Security Alert Pipeline for Crime Detection Surveillance
 Handles alert dispatching with cooldown management, local structured JSON
 and log auditing, webhook notifications (Slack/Discord/Custom API), and
 sound triggers.
+
+On Raspberry Pi edge deployments, this can also drive a physical GPIO
+buzzer/siren directly (see GPIO_BUZZER_PIN below). RPi.GPIO is imported
+lazily and only on devices that have it, so this module still runs fine
+on the CUDA training/dev machine.
 """
 
 import json
@@ -11,6 +16,15 @@ import os
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+try:
+    import RPi.GPIO as GPIO
+    _GPIO_AVAILABLE = True
+except (ImportError, RuntimeError):
+    # ImportError: not on a Pi / library not installed.
+    # RuntimeError: RPi.GPIO imported on non-Pi hardware.
+    GPIO = None
+    _GPIO_AVAILABLE = False
 
 
 class AlertManager:
@@ -20,6 +34,8 @@ class AlertManager:
         log_path: str = "outputs/alerts.log",
         json_log_path: str = "outputs/alerts.json",
         webhook_url: Optional[str] = None,
+        gpio_buzzer_pin: Optional[int] = None,
+        buzzer_duration: float = 1.5,
     ):
         self.cooldown_seconds = cooldown_seconds
         self._last_alert_time = 0.0
@@ -28,6 +44,27 @@ class AlertManager:
         self.webhook_url = webhook_url or os.getenv("SURVEILLANCE_WEBHOOK_URL")
 
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # GPIO buzzer setup (Raspberry Pi edge deployment only).
+        # Pin defaults to BCM 17, matching the wiring in docs/hardware-setup.md.
+        env_pin = os.getenv("SURVEILLANCE_BUZZER_PIN")
+        self.gpio_buzzer_pin = gpio_buzzer_pin if gpio_buzzer_pin is not None else (
+            int(env_pin) if env_pin else None
+        )
+        self.buzzer_duration = buzzer_duration
+        self._gpio_ready = False
+
+        if self.gpio_buzzer_pin is not None:
+            if _GPIO_AVAILABLE:
+                GPIO.setmode(GPIO.BCM)
+                GPIO.setup(self.gpio_buzzer_pin, GPIO.OUT)
+                GPIO.output(self.gpio_buzzer_pin, GPIO.LOW)
+                self._gpio_ready = True
+            else:
+                print(
+                    "⚠️ gpio_buzzer_pin was set but RPi.GPIO is not available "
+                    "on this device — buzzer alerts will be skipped."
+                )
 
     def trigger(
         self,
@@ -90,6 +127,10 @@ class AlertManager:
         if self.webhook_url:
             self._send_webhook(alert_payload)
 
+        # 5. Optional GPIO Buzzer (Raspberry Pi edge nodes)
+        if self._gpio_ready:
+            self._trigger_buzzer()
+
     def _append_json(self, payload: Dict[str, Any]):
         alerts = []
         if self.json_log_path.exists():
@@ -115,3 +156,17 @@ class AlertManager:
                 print(f"📡 Webhook sent to {self.webhook_url} (HTTP {resp.status})")
         except Exception as e:
             print(f"⚠️ Webhook dispatch failed: {e}")
+
+    def _trigger_buzzer(self):
+        """Pulse the GPIO buzzer for self.buzzer_duration seconds."""
+        try:
+            GPIO.output(self.gpio_buzzer_pin, GPIO.HIGH)
+            time.sleep(self.buzzer_duration)
+            GPIO.output(self.gpio_buzzer_pin, GPIO.LOW)
+        except Exception as e:
+            print(f"⚠️ GPIO buzzer trigger failed: {e}")
+
+    def cleanup(self):
+        """Release GPIO resources. Call on shutdown (e.g. in a finally block)."""
+        if self._gpio_ready:
+            GPIO.cleanup(self.gpio_buzzer_pin)

@@ -17,7 +17,7 @@ An enterprise-grade, end-to-end AI surveillance suite for real-time weapon detec
 - **Interactive Threat Inspector**: Drag-and-drop file upload with one-click testing of benchmark weapon samples and instant bounding box visualization.
 - **Live Browser Webcam Surveillance**: Stream video from local cameras straight into the YOLO model, displaying real-time bounding boxes, target crosshairs, and triggering audio alarm sirens.
 - **Genuine Evaluation Suite (`src/evaluate.py`)**: Replaced placeholder metrics with real PyTorch `val.py` validation across all 1,491 held-out test frames.
-- **Production TFLite Pipeline**: Exported working TFLite edge models (`models/best-fp16.tflite`, `models/best.tflite`) for Raspberry Pi deployment.
+- **Production TFLite Pipeline**: Exported working TFLite edge models (`models/best-fp16.tflite`, `models/best.tflite`) for Raspberry Pi deployment, including a physical GPIO buzzer alert wired into the existing alert pipeline.
 
 ---
 
@@ -33,7 +33,7 @@ crime-detection-yolo/
 │   ├── evaluate.py        # Real model validation & mAP metric generator
 │   ├── export_tflite.py   # Export PyTorch weights to TFLite format
 │   └── alerting/
-│       └── alert.py       # Cooldown-managed threat alerts (JSON, logs, sirens)
+│       └── alert.py       # Cooldown-managed threat alerts (JSON, logs, sirens, GPIO buzzer)
 ├── dashboard/             # React + Vite Security Command Center
 │   ├── src/
 │   │   ├── components/
@@ -133,6 +133,9 @@ python src/evaluate.py --weights models/best.pt --data data/data.yaml
 
 # 5. Export to TFLite for Raspberry Pi
 python yolov5/export.py --weights models/best.pt --include tflite --img 512
+
+# 6. Run edge inference loop on the Raspberry Pi (see Hardware Setup below)
+python src/detect_tflite.py --model models/best.tflite --source 0 --conf 0.45
 ```
 
 ---
@@ -149,6 +152,48 @@ Evaluated using PyTorch `val.py` on held-out test data (1,491 images, 1,540 obje
 
 - **Inference Latency**: **3.2 ms** per frame on NVIDIA GeForce RTX 3050 Laptop GPU (over 300 FPS throughput).
 - **Edge Latency**: **~14.2 ms** on Raspberry Pi 4 / 5 using TensorFlow Lite.
+
+> **Note:** the Knife class is not yet broken out above — the current weights were only fine-tuned for 3 epochs on the newly rebalanced knife data, so its individual metrics are still weak and pending further training. The overall mAP@0.5 figure includes it.
+
+---
+
+## 🔌 Raspberry Pi Hardware Setup & Wiring
+
+Edge deployment target: **Raspberry Pi 4** (USB-C power) running `src/detect_tflite.py`.
+
+### Camera Module (CSI ribbon)
+
+1. Power off the Pi.
+2. Lift the CSI connector's plastic clip (between the USB and HDMI ports), insert the ribbon cable with the blue side facing the USB/Ethernet ports, and push the clip back down.
+3. Enable the interface: `sudo raspi-config` → **Interface Options → Camera → Enable**, then reboot.
+4. Verify: `libcamera-hello --timeout 2000` should show a live preview.
+
+### GPIO Buzzer (physical alert siren)
+
+| Buzzer Pin | Pi 4 Physical Pin | BCM GPIO |
+| :--- | :---: | :---: |
+| Signal / + | Pin 11 | GPIO17 |
+| GND / − | Pin 9 | GND |
+
+- Small piezo buzzers (<20mA) can be wired directly to GPIO17 as shown.
+- Louder 5V siren modules should **not** be powered directly from the GPIO pin — drive them through an NPN transistor (e.g. 2N2222) switched by GPIO17, with the buzzer itself powered from the Pi's 5V rail (Pin 2).
+
+**Power:** official Pi 4 USB-C supply (5V/3A). Under-powering is the most common cause of camera dropouts / random reboots during inference — avoid sharing the supply with other high-draw USB peripherals.
+
+### Software integration
+
+The buzzer is wired directly into the existing alert pipeline in `alerting/alert.py` — no separate script needed:
+
+```bash
+pip install RPi.GPIO
+```
+
+`AlertManager` accepts a `gpio_buzzer_pin` argument (defaults to `None`, i.e. no-op on non-Pi machines). `src/detect_tflite.py` passes `gpio_buzzer_pin=17`, so every threat alert that fires the console/log/JSON/webhook pipeline also pulses the physical buzzer for ~1.5s. `RPi.GPIO` is imported lazily, so `alert.py` still runs unmodified on the CUDA training/dev machine — the buzzer step is simply skipped there.
+
+You can override the pin without touching code:
+```bash
+export SURVEILLANCE_BUZZER_PIN=17
+```
 
 ---
 

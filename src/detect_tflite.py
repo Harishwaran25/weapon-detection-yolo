@@ -113,7 +113,9 @@ class TFLiteYOLO:
 def run_edge_surveillance(model_path, source, conf_thres, save_dir):
     print(f"⚡ Initializing Edge TFLite Surveillance on model: {model_path}")
     detector = TFLiteYOLO(model_path, conf_thres=conf_thres)
-    alert_mgr = AlertManager(cooldown_seconds=5)
+    # gpio_buzzer_pin=17 wires alerts to the physical siren on BCM GPIO17
+    # (see docs/hardware-setup.md). Safely ignored on non-Pi devices.
+    alert_mgr = AlertManager(cooldown_seconds=5, gpio_buzzer_pin=17)
 
     cap = cv2.VideoCapture(int(source) if str(source).isdigit() else source)
     if not cap.isOpened():
@@ -172,6 +174,7 @@ def run_edge_surveillance(model_path, source, conf_thres, save_dir):
 
     cap.release()
     cv2.destroyAllWindows()
+    alert_mgr.cleanup()
     print("🔴 Edge Surveillance Stopped.")
 
 

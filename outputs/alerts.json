@@ -1,5 +1,45 @@
 [
   {
+    "id": "ALT-426081",
+    "event_id": "ALT-426081",
+    "timestamp": "2026-09-04 20:20:26",
+    "epoch": 1788533426081,
+    "cameraId": "SAMPLE_sample_gun_1.jpg",
+    "locationName": "Surveillance Stream",
+    "threatClass": "gun",
+    "confidence": 0.8232,
+    "severity": "CRITICAL",
+    "status": "ACTIVE",
+    "snapshotUrl": "/api/snapshots/sample_threat_1788533426078.jpg",
+    "snapshot_path": "outputs/sample_threat_1788533426078.jpg",
+    "bbox": [
+      203,
+      275,
+      274,
+      350
+    ]
+  },
+  {
+    "id": "ALT-426080",
+    "event_id": "ALT-426080",
+    "timestamp": "2026-09-04 20:20:26",
+    "epoch": 1788533426080,
+    "cameraId": "SAMPLE_sample_gun_1.jpg",
+    "locationName": "Surveillance Stream",
+    "threatClass": "gun",
+    "confidence": 0.8232,
+    "severity": "CRITICAL",
+    "status": "ACTIVE",
+    "snapshotUrl": "/api/snapshots/sample_threat_1788533426077.jpg",
+    "snapshot_path": "outputs/sample_threat_1788533426077.jpg",
+    "bbox": [
+      203,
+      275,
+      274,
+      350
+    ]
+  },
+  {
     "id": "ALT-969549",
     "event_id": "ALT-969549",
     "timestamp": "2026-09-04 09:22:49",
