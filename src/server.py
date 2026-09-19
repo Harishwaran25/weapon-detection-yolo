@@ -94,17 +94,18 @@ class ModelWrapper:
                 print(f"❌ Fallback loading failed: {e2}")
                 self.model = None
 
-    def predict(self, frame_bgr: np.ndarray, conf_thres: float = 0.35, iou_thres: float = 0.45):
+    def predict(self, frame_bgr: np.ndarray, conf_thres: float = 0.25, iou_thres: float = 0.45, imgsz: int = 640):
         if self.model is None:
             return [], frame_bgr, False, None, 0.0
 
         t0 = time.perf_counter()
         self.model.conf = conf_thres
         self.model.iou = iou_thres
+        self.model.max_det = 50
 
         # Convert BGR to RGB
         frame_rgb = frame_bgr[:, :, ::-1]
-        results = self.model(frame_rgb)
+        results = self.model(frame_rgb, size=int(imgsz))
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
         df = results.pandas().xyxy[0]
@@ -161,6 +162,8 @@ class ModelWrapper:
                 cv2.circle(annotated, (cx, cy), 5, (40, 40, 245), -1)
                 cv2.circle(annotated, (cx, cy), 16, (40, 40, 245), 1)
 
+        # Highest-confidence detections first for dashboard display
+        detections.sort(key=lambda d: d["confidence"], reverse=True)
         return detections, annotated, has_threat, top_threat, latency_ms
 
 
@@ -262,7 +265,7 @@ def get_telemetry():
 @app.post("/api/detect/upload")
 async def detect_uploaded_file(
     file: UploadFile = File(...),
-    conf: float = Form(0.35),
+    conf: float = Form(0.25),
     iou: float = Form(0.45),
     camera_id: str = Form("UPLOAD_ANALYSIS")
 ):
@@ -306,7 +309,7 @@ async def detect_uploaded_file(
 
 class FrameRequest(BaseModel):
     image: str  # Base64 string
-    conf: float = 0.35
+    conf: float = 0.25
     iou: float = 0.45
     camera_id: str = "LIVE_WEBCAM"
     record_alert: bool = False
@@ -355,31 +358,60 @@ def detect_base64_frame(req: FrameRequest):
 
 @app.websocket("/ws/webcam")
 async def websocket_webcam(websocket: WebSocket):
-    """High-throughput WebSocket for browser webcam real-time inference."""
+    """Browser webcam real-time inference (one in-flight frame; non-blocking predict)."""
     await websocket.accept()
     last_alert_time = 0.0
+    loop = asyncio.get_running_loop()
     try:
         while True:
             data = await websocket.receive_text()
-            payload = json.loads(data)
+            t_recv = time.perf_counter()
+            try:
+                payload = json.loads(data)
+            except json.JSONDecodeError:
+                await websocket.send_text(json.dumps({"error": "Invalid JSON", "detections": [], "inference_ms": 0, "fps": 0}))
+                continue
+
             b64_data = payload.get("image", "")
-            conf = float(payload.get("conf", 0.35))
+            conf = float(payload.get("conf", 0.25))
             iou = float(payload.get("iou", 0.45))
             camera_id = payload.get("cameraId", "BROWSER_WEBCAM")
+            # Live cam: prefer 512 for speed unless client asks higher
+            imgsz = int(payload.get("imgsz", 512))
 
             if "," in b64_data:
                 b64_data = b64_data.split(",", 1)[1]
 
-            img_bytes = base64.b64decode(b64_data)
-            nparr = np.frombuffer(img_bytes, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            try:
+                img_bytes = base64.b64decode(b64_data)
+                nparr = np.frombuffer(img_bytes, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            except Exception:
+                frame = None
 
             if frame is None:
-                await websocket.send_text(json.dumps({"error": "Failed to decode frame"}))
+                await websocket.send_text(json.dumps({
+                    "error": "Failed to decode frame",
+                    "detections": [],
+                    "inference_ms": 0,
+                    "fps": 0,
+                    "threat_detected": False,
+                    "top_threat": None,
+                }))
                 continue
 
-            detections, annotated, has_threat, top_threat, latency_ms = model_wrapper.predict(
-                frame, conf_thres=conf, iou_thres=iou
+            # Downscale large phone/webcam frames before inference
+            h, w = frame.shape[:2]
+            max_side = 960
+            if max(h, w) > max_side:
+                scale = max_side / float(max(h, w))
+                frame = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+            def _run_predict():
+                return model_wrapper.predict(frame, conf_thres=conf, iou_thres=iou, imgsz=imgsz)
+
+            detections, annotated, has_threat, top_threat, latency_ms = await loop.run_in_executor(
+                None, _run_predict
             )
 
             # Cooldown alert recording (once every 4 seconds)
@@ -396,14 +428,15 @@ async def websocket_webcam(websocket: WebSocket):
                 bbox_val = top_det["bbox"] if top_det else None
                 add_alert_record(top_threat or "weapon", conf_val, camera_id, str(save_path), bbox_val)
 
-            # Send back detections and coordinates for client canvas rendering
+            wall_ms = (time.perf_counter() - t_recv) * 1000.0
             response = {
                 "threat_detected": has_threat,
                 "top_threat": top_threat,
                 "detections": detections,
                 "inference_ms": round(latency_ms, 1),
-                "fps": round(1000.0 / max(latency_ms, 1.0), 1),
+                "fps": round(1000.0 / max(wall_ms, 1.0), 1),
                 "snapshot_url": snapshot_url,
+                "frame_wh": [int(frame.shape[1]), int(frame.shape[0])],
             }
             await websocket.send_text(json.dumps(response))
 
@@ -489,7 +522,7 @@ def get_sample_file(filename: str):
 
 
 @app.post("/api/detect/sample/{filename}")
-def detect_sample(filename: str, conf: float = 0.35, iou: float = 0.45):
+def detect_sample(filename: str, conf: float = 0.25, iou: float = 0.45):
     file_path = SAMPLES_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Sample not found")

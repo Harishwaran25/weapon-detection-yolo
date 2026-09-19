@@ -1,5 +1,6 @@
 # Crime Detection Dataset Config (Roboflow Weapon Detection v16)
-path: /home/harish/weapon-detection.v16-remapped-train-80-val-20.yolov5pytorch
+# Points at local data_downloaded/ — do not change class names or order (matches models/best.pt)
+path: /home/harish/crime-detection-yolo/data_downloaded
 train: train/images
 val: valid/images
 test: valid/images

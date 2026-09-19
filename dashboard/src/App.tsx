@@ -12,7 +12,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'surveillance' | 'inspector' | 'alerts' | 'analytics' | 'edge' | 'dataset'>('surveillance');
   const [alerts, setAlerts] = useState<ThreatAlert[]>([]);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
-  const [confThreshold, setConfThreshold] = useState<number>(0.35);
+  const [confThreshold, setConfThreshold] = useState<number>(0.25);
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
 
   // Poll backend health status
@@ -93,6 +93,7 @@ export default function App() {
         {activeTab === 'inspector' && (
           <ThreatInspector
             confThreshold={confThreshold}
+            setConfThreshold={setConfThreshold}
             soundEnabled={soundEnabled}
             onThreatDetected={fetchAlerts}
           />
