@@ -21,7 +21,7 @@ Edge deployment target: **Raspberry Pi 4** (USB-C power) running `src/detect_tfl
 
 **Power:** official Pi 4 USB-C supply (5V/3A). Under-powering is the most common cause of camera dropouts / random reboots during inference — avoid sharing the supply with other high-draw USB peripherals.
 
-### Software integration
+### Software integration method
 
 The buzzer is wired directly into the existing alert pipeline in `alerting/alert.py` — no separate script needed:
 
