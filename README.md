@@ -10,7 +10,7 @@ An enterprise-grade, end-to-end AI surveillance suite for real-time weapon detec
 
 ---
 
-## 🌟 What's New & Upgraded
+## 🌟 What's New & Upgraded points
 
 - **Fine-Tuned YOLOv5 Model**: Rebalanced dataset and fine-tuned weights on CUDA (`models/best.pt`) boosting gun mAP@0.5 to **63.9%** and heavy-weapon mAP@0.5 to **79.4%** with sub-4ms GPU inference latency.
 - **FastAPI Real-Time Backend (`src/server.py`)**: High-speed WebSocket streaming for browser webcams (25-30+ FPS), multipart media uploads, live telemetry, and persistent incident alerts.
