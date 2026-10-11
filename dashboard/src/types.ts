@@ -6,6 +6,9 @@ export interface DetectionBox {
   confidence: number;
   isThreat: boolean;
   severity: Severity;
+  threatScore?: number;
+  urgencyLevel?: string;
+  proximityPct?: number;
 }
 
 export type BoundingBox = DetectionBox;
@@ -20,6 +23,8 @@ export interface ThreatAlert {
   threatClass: string;
   confidence: number;
   severity: Severity;
+  urgency?: string;
+  threatScore?: number;
   snapshotUrl?: string | null;
   snapshot_path?: string;
   status: 'ACTIVE' | 'ACKNOWLEDGED' | 'DISPATCHED' | 'FALSE_ALARM' | 'RESOLVED';
@@ -59,6 +64,9 @@ export interface InferenceResult {
   success: boolean;
   threat_detected: boolean;
   top_threat: string | null;
+  threat_score?: number;
+  urgency?: string;
+  urgency_summary?: string;
   detections: DetectionBox[];
   inference_ms: number;
   annotated_image: string;

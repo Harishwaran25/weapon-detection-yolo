@@ -1,0 +1,13 @@
+{
+  "train_images": 10892,
+  "valid_images": 1491,
+  "purged_leakage_images": 158,
+  "remaining_train_valid_leakage": 0,
+  "internal_train_duplicates": 5037,
+  "train_boxes_by_class": {
+    "0 (gun)": 2644,
+    "1 (heavy-weapon)": 10663,
+    "2 (knife)": 13
+  },
+  "leak_free": true
+}

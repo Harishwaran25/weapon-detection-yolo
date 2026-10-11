@@ -305,18 +305,25 @@ export const ThreatInspector: React.FC<ThreatInspectorProps> = ({
           </div>
 
           {result && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>GPU Latency</span>
-                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>GPU Latency</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
                   {result.inference_ms} ms
                 </div>
               </div>
 
-              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Objects Found</span>
-                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: result.detections.length > 0 ? '#ef4444' : 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
+              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Objects Found</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: result.detections.length > 0 ? '#ef4444' : 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
                   {result.detections.length}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Threat Score</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: (result.threat_score ?? 0) > 60 ? '#ef4444' : '#f59e0b', fontFamily: 'var(--font-mono)' }}>
+                  {result.threat_score ?? (result.threat_detected ? 85 : 0)}/100
                 </div>
               </div>
             </div>

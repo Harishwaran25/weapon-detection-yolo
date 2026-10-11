@@ -42,6 +42,8 @@ SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
 THREAT_CLASSES = {"gun", "pistol", "rifle", "knife", "weapon", "heavy-weapon"}
 
+from surveillance_analytics import temporal_tracker, privacy_filter
+
 app = FastAPI(title="Sentinel AI - Weapon Detection Surveillance API", version="2.0.0")
 
 # CORS middleware for web frontend
@@ -186,7 +188,15 @@ def save_alerts(alerts: List[Dict[str, Any]]):
         json.dump(alerts, f, indent=2)
 
 
-def add_alert_record(threat_class: str, confidence: float, camera_id: str, snapshot_rel_path: str, bbox: Optional[List[int]] = None):
+def add_alert_record(
+    threat_class: str,
+    confidence: float,
+    camera_id: str,
+    snapshot_rel_path: str,
+    bbox: Optional[List[int]] = None,
+    urgency: str = "HIGH",
+    threat_score: float = 75.0
+):
     alerts = load_alerts()
     now = time.time()
     time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
@@ -202,6 +212,8 @@ def add_alert_record(threat_class: str, confidence: float, camera_id: str, snaps
         "threatClass": threat_class,
         "confidence": round(confidence, 4),
         "severity": "CRITICAL" if threat_class in ["gun", "heavy-weapon"] else "HIGH",
+        "urgency": urgency,
+        "threatScore": round(threat_score, 1),
         "status": "ACTIVE",
         "snapshotUrl": f"/api/snapshots/{Path(snapshot_rel_path).name}" if snapshot_rel_path else None,
         "snapshot_path": snapshot_rel_path,
@@ -267,7 +279,8 @@ async def detect_uploaded_file(
     file: UploadFile = File(...),
     conf: float = Form(0.25),
     iou: float = Form(0.45),
-    camera_id: str = Form("UPLOAD_ANALYSIS")
+    camera_id: str = Form("UPLOAD_ANALYSIS"),
+    privacy_blur: bool = Form(True)
 ):
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
@@ -280,16 +293,21 @@ async def detect_uploaded_file(
         frame, conf_thres=conf, iou_thres=iou
     )
 
+    threat_score, urgency_level, urgency_msg, detections = temporal_tracker.update_and_score(
+        frame.shape, detections
+    )
+
     snapshot_url = None
     if has_threat:
         filename = f"threat_{int(time.time() * 1000)}.jpg"
         save_path = OUTPUTS_DIR / filename
-        cv2.imwrite(str(save_path), annotated)
+        snapshot_to_save = privacy_filter.apply_privacy_blur(annotated, [d["bbox"] for d in detections], blur_faces=privacy_blur)
+        cv2.imwrite(str(save_path), snapshot_to_save)
         snapshot_url = f"/api/snapshots/{filename}"
         top_det = next((d for d in detections if d["label"] == top_threat), detections[0] if detections else None)
         conf_val = top_det["confidence"] if top_det else 0.8
         bbox_val = top_det["bbox"] if top_det else None
-        add_alert_record(top_threat or "weapon", conf_val, camera_id, str(save_path), bbox_val)
+        add_alert_record(top_threat or "weapon", conf_val, camera_id, str(save_path), bbox_val, urgency=urgency_level, threat_score=threat_score)
 
     # Encode annotated frame to Base64 JPEG
     _, buffer = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -300,6 +318,9 @@ async def detect_uploaded_file(
         "filename": file.filename,
         "threat_detected": has_threat,
         "top_threat": top_threat,
+        "threat_score": threat_score,
+        "urgency": urgency_level,
+        "urgency_summary": urgency_msg,
         "detections": detections,
         "inference_ms": round(latency_ms, 2),
         "annotated_image": f"data:image/jpeg;base64,{b64_image}",
@@ -313,6 +334,7 @@ class FrameRequest(BaseModel):
     iou: float = 0.45
     camera_id: str = "LIVE_WEBCAM"
     record_alert: bool = False
+    privacy_blur: bool = True
 
 
 @app.post("/api/detect/frame")
@@ -332,16 +354,21 @@ def detect_base64_frame(req: FrameRequest):
         frame, conf_thres=req.conf, iou_thres=req.iou
     )
 
+    threat_score, urgency_level, urgency_msg, detections = temporal_tracker.update_and_score(
+        frame.shape, detections
+    )
+
     snapshot_url = None
     if has_threat and req.record_alert:
         filename = f"threat_{int(time.time() * 1000)}.jpg"
         save_path = OUTPUTS_DIR / filename
-        cv2.imwrite(str(save_path), annotated)
+        snapshot_to_save = privacy_filter.apply_privacy_blur(annotated, [d["bbox"] for d in detections], blur_faces=req.privacy_blur)
+        cv2.imwrite(str(save_path), snapshot_to_save)
         snapshot_url = f"/api/snapshots/{filename}"
         top_det = next((d for d in detections if d["label"] == top_threat), detections[0] if detections else None)
         conf_val = top_det["confidence"] if top_det else 0.8
         bbox_val = top_det["bbox"] if top_det else None
-        add_alert_record(top_threat or "weapon", conf_val, req.camera_id, str(save_path), bbox_val)
+        add_alert_record(top_threat or "weapon", conf_val, req.camera_id, str(save_path), bbox_val, urgency=urgency_level, threat_score=threat_score)
 
     _, buffer = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
     b64_image = base64.b64encode(buffer).decode("utf-8")
@@ -349,6 +376,9 @@ def detect_base64_frame(req: FrameRequest):
     return {
         "threat_detected": has_threat,
         "top_threat": top_threat,
+        "threat_score": threat_score,
+        "urgency": urgency_level,
+        "urgency_summary": urgency_msg,
         "detections": detections,
         "inference_ms": round(latency_ms, 2),
         "annotated_image": f"data:image/jpeg;base64,{b64_image}",
@@ -414,6 +444,10 @@ async def websocket_webcam(websocket: WebSocket):
                 None, _run_predict
             )
 
+            threat_score, urgency_level, urgency_msg, detections = temporal_tracker.update_and_score(
+                frame.shape, detections
+            )
+
             # Cooldown alert recording (once every 4 seconds)
             now = time.time()
             snapshot_url = None
@@ -421,17 +455,21 @@ async def websocket_webcam(websocket: WebSocket):
                 last_alert_time = now
                 filename = f"threat_{int(now * 1000)}.jpg"
                 save_path = OUTPUTS_DIR / filename
-                cv2.imwrite(str(save_path), annotated)
+                snapshot_to_save = privacy_filter.apply_privacy_blur(annotated, [d["bbox"] for d in detections], blur_faces=True)
+                cv2.imwrite(str(save_path), snapshot_to_save)
                 snapshot_url = f"/api/snapshots/{filename}"
                 top_det = next((d for d in detections if d["label"] == top_threat), detections[0] if detections else None)
                 conf_val = top_det["confidence"] if top_det else 0.8
                 bbox_val = top_det["bbox"] if top_det else None
-                add_alert_record(top_threat or "weapon", conf_val, camera_id, str(save_path), bbox_val)
+                add_alert_record(top_threat or "weapon", conf_val, camera_id, str(save_path), bbox_val, urgency=urgency_level, threat_score=threat_score)
 
             wall_ms = (time.perf_counter() - t_recv) * 1000.0
             response = {
                 "threat_detected": has_threat,
                 "top_threat": top_threat,
+                "threat_score": threat_score,
+                "urgency": urgency_level,
+                "urgency_summary": urgency_msg,
                 "detections": detections,
                 "inference_ms": round(latency_ms, 1),
                 "fps": round(1000.0 / max(wall_ms, 1.0), 1),
@@ -535,16 +573,21 @@ def detect_sample(filename: str, conf: float = 0.25, iou: float = 0.45):
         frame, conf_thres=conf, iou_thres=iou
     )
 
+    threat_score, urgency_level, urgency_msg, detections = temporal_tracker.update_and_score(
+        frame.shape, detections
+    )
+
     snapshot_url = None
     if has_threat:
         out_name = f"sample_threat_{int(time.time() * 1000)}.jpg"
         save_path = OUTPUTS_DIR / out_name
-        cv2.imwrite(str(save_path), annotated)
+        snapshot_to_save = privacy_filter.apply_privacy_blur(annotated, [d["bbox"] for d in detections], blur_faces=True)
+        cv2.imwrite(str(save_path), snapshot_to_save)
         snapshot_url = f"/api/snapshots/{out_name}"
         top_det = next((d for d in detections if d["label"] == top_threat), detections[0] if detections else None)
         conf_val = top_det["confidence"] if top_det else 0.8
         bbox_val = top_det["bbox"] if top_det else None
-        add_alert_record(top_threat or "weapon", conf_val, f"SAMPLE_{filename}", str(save_path), bbox_val)
+        add_alert_record(top_threat or "weapon", conf_val, f"SAMPLE_{filename}", str(save_path), bbox_val, urgency=urgency_level, threat_score=threat_score)
 
     _, buffer = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
     b64_image = base64.b64encode(buffer).decode("utf-8")
@@ -554,6 +597,9 @@ def detect_sample(filename: str, conf: float = 0.25, iou: float = 0.45):
         "filename": filename,
         "threat_detected": has_threat,
         "top_threat": top_threat,
+        "threat_score": threat_score,
+        "urgency": urgency_level,
+        "urgency_summary": urgency_msg,
         "detections": detections,
         "inference_ms": round(latency_ms, 2),
         "annotated_image": f"data:image/jpeg;base64,{b64_image}",

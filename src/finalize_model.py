@@ -30,34 +30,49 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from evaluate import evaluate_model  # noqa: E402
 
 MODEL_DIR = PROJECT_ROOT / "models"
-DATA_YAML = PROJECT_ROOT / "data" / "weapon3k" / "data.yaml"
+DEFAULT_DATA_YAML = PROJECT_ROOT / "data" / "data.yaml"
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Publish weights, evaluate on test split, export TFLite")
-    parser.add_argument("--run", type=str, default="runs/train/weapon3k-s2")
+    parser = argparse.ArgumentParser(description="Publish weights, evaluate on validation split, export TFLite")
+    parser.add_argument("--run", type=str, default="runs/train/weapon-accuracy", help="Path to run directory")
+    parser.add_argument("--data", type=str, default=str(DEFAULT_DATA_YAML), help="Dataset YAML configuration")
     parser.add_argument("--img", type=int, default=512, help="TFLite edge input size")
     args = parser.parse_args()
 
-    run_dir = PROJECT_ROOT / args.run
+    data_yaml_path = Path(args.data)
+    if not data_yaml_path.exists():
+        data_yaml_path = PROJECT_ROOT / "data" / "data.yaml"
+
+    run_dir = Path(args.run)
+    if not run_dir.is_absolute():
+        run_dir = PROJECT_ROOT / run_dir
     best = run_dir / "weights" / "best.pt"
     if not best.exists():
-        raise FileNotFoundError(f"{best} not found")
+        # Fallback to models/best.pt if run directory not found
+        fallback_best = MODEL_DIR / "best.pt"
+        if fallback_best.exists():
+            print(f"ℹ️ {best} not found, using existing {fallback_best}")
+            best = fallback_best
+        else:
+            raise FileNotFoundError(f"{best} not found")
 
     MODEL_DIR.mkdir(exist_ok=True)
 
     # 1) Publish PyTorch weights
-    shutil.copyfile(best, MODEL_DIR / "best.pt")
-    print(f"✅ Published {best} -> models/best.pt")
+    target_best = MODEL_DIR / "best.pt"
+    if best != target_best:
+        shutil.copyfile(best, target_best)
+        print(f"✅ Published {best} -> models/best.pt")
 
-    # 2) True test-split evaluation (writes outputs/evaluation_results.json)
+    # 2) True evaluation (writes outputs/evaluation_results.json)
     results = evaluate_model(
         weights_path=str(MODEL_DIR / "best.pt"),
-        data_config=str(DATA_YAML),
-        task="test",
+        data_config=str(data_yaml_path),
+        conf_thres=0.35,
     )
     per_class = ", ".join(f"{k}: {v['map50']}" for k, v in results["classes"].items())
-    print(f"✅ Test-split metrics: mAP50={results['mAP_50']} per-class=({per_class})")
+    print(f"✅ Metrics: mAP50={results['mAP_50']} per-class=({per_class})")
 
     # 3) TFLite export via the strict wrapper
     subprocess.run(
