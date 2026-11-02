@@ -5,12 +5,14 @@ import { alarmAudio } from '../utils/audio';
 
 interface ThreatInspectorProps {
   confThreshold: number;
+  setConfThreshold: (val: number) => void;
   soundEnabled: boolean;
   onThreatDetected?: () => void;
 }
 
 export const ThreatInspector: React.FC<ThreatInspectorProps> = ({
   confThreshold,
+  setConfThreshold,
   soundEnabled,
   onThreatDetected,
 }) => {
@@ -21,16 +23,15 @@ export const ThreatInspector: React.FC<ThreatInspectorProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Fetch sample images list
+  // Fetch sample images list once
   useEffect(() => {
     fetch('/api/samples')
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
           setSamples(data);
-          // Auto-select first sample for instant showcase
           if (data.length > 0) {
-            handleRunSample(data[0].filename);
+            setSelectedSample(data[0].filename);
           }
         }
       })
@@ -74,14 +75,14 @@ export const ThreatInspector: React.FC<ThreatInspectorProps> = ({
     }
   };
 
-  const handleRunSample = async (filename: string) => {
+  const handleRunSample = async (filename: string, conf = confThreshold) => {
     setErrorMsg(null);
     setSelectedSample(filename);
     setLoading(true);
     setPreviewUrl(`/api/samples/${filename}`);
 
     try {
-      const res = await fetch(`/api/detect/sample/${filename}?conf=${confThreshold}&iou=0.45`, {
+      const res = await fetch(`/api/detect/sample/${filename}?conf=${conf}&iou=0.45`, {
         method: 'POST',
       });
       if (!res.ok) throw new Error(`Sample analysis failed: ${res.statusText}`);
@@ -99,6 +100,14 @@ export const ThreatInspector: React.FC<ThreatInspectorProps> = ({
     }
   };
 
+  // Auto-run / re-run selected sample when samples load or confidence changes
+  useEffect(() => {
+    if (selectedSample) {
+      handleRunSample(selectedSample, confThreshold);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSample, confThreshold]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Top Banner */}
@@ -115,11 +124,36 @@ export const ThreatInspector: React.FC<ThreatInspectorProps> = ({
           </div>
         </div>
 
-        {/* Upload Button */}
-        <label className="btn btn-primary" style={{ cursor: 'pointer', padding: '10px 18px' }}>
-          <Upload size={16} /> Upload Test Image
-          <input type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} />
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'rgba(0,0,0,0.35)',
+            padding: '6px 12px',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+          }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Conf:</span>
+            <input
+              type="range"
+              min="0.15"
+              max="0.85"
+              step="0.05"
+              value={confThreshold}
+              onChange={(e) => setConfThreshold(parseFloat(e.target.value))}
+              style={{ width: '85px', accentColor: 'var(--accent-cyan)' }}
+            />
+            <span style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent-cyan)' }}>
+              {(confThreshold * 100).toFixed(0)}%
+            </span>
+          </div>
+
+          <label className="btn btn-primary" style={{ cursor: 'pointer', padding: '10px 18px' }}>
+            <Upload size={16} /> Upload Test Image
+            <input type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} />
+          </label>
+        </div>
       </div>
 
       {/* Benchmark Samples Selector */}
@@ -143,7 +177,7 @@ export const ThreatInspector: React.FC<ThreatInspectorProps> = ({
               return (
                 <button
                   key={s.filename}
-                  onClick={() => handleRunSample(s.filename)}
+                  onClick={() => setSelectedSample(s.filename)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -271,18 +305,25 @@ export const ThreatInspector: React.FC<ThreatInspectorProps> = ({
           </div>
 
           {result && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>GPU Latency</span>
-                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>GPU Latency</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
                   {result.inference_ms} ms
                 </div>
               </div>
 
-              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Objects Found</span>
-                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: result.detections.length > 0 ? '#ef4444' : 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
+              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Objects Found</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: result.detections.length > 0 ? '#ef4444' : 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
                   {result.detections.length}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(0,0,0,0.35)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Threat Score</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: (result.threat_score ?? 0) > 60 ? '#ef4444' : '#f59e0b', fontFamily: 'var(--font-mono)' }}>
+                  {result.threat_score ?? (result.threat_detected ? 85 : 0)}/100
                 </div>
               </div>
             </div>

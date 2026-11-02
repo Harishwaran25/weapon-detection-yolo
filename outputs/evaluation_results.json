@@ -1,28 +1,28 @@
 {
-  "model_weights": "models/best.pt",
-  "overall_precision": 0.5163,
-  "overall_recall": 0.4028,
-  "mAP_50": 0.4777,
-  "mAP_50_95": 0.2973,
-  "inference_speed_ms": 3.16,
+  "model_weights": "/home/harish/crime-detection-yolo/models/best.pt",
+  "overall_precision": 0.6886,
+  "overall_recall": 0.512,
+  "mAP_50": 0.6165,
+  "mAP_50_95": 0.3694,
+  "inference_speed_ms": 3.14,
   "classes": {
     "gun": {
-      "precision": 0.5163,
-      "recall": 0.4028,
-      "map50": 0.3457,
-      "map50_95": 0.2973
+      "precision": 0.7508,
+      "recall": 0.6162,
+      "map50": 0.7258,
+      "map50_95": 0.4412
     },
     "heavy-weapon": {
-      "precision": 0.5163,
-      "recall": 0.4028,
-      "map50": 0.5462,
-      "map50_95": 0.2973
+      "precision": 0.875,
+      "recall": 0.7084,
+      "map50": 0.7842,
+      "map50_95": 0.472
     },
     "knife": {
-      "precision": 0.5163,
-      "recall": 0.4028,
-      "map50": 0.0,
-      "map50_95": 0.2973
+      "precision": 0.44,
+      "recall": 0.2115,
+      "map50": 0.3395,
+      "map50_95": 0.1949
     }
   },
   "device": "0"

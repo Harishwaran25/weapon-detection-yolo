@@ -84,47 +84,102 @@ class TFLiteYOLO:
         # Handle standard YOLO TFLite output layout [1, num_boxes, 5 + num_classes]
         if len(output.shape) == 3:
             raw_boxes = output[0]
+            boxes_for_nms = []
+            scores_for_nms = []
+            class_ids_for_nms = []
+
             for box in raw_boxes:
                 conf = box[4]
                 if conf < self.conf_thres:
                     continue
                 class_scores = box[5:]
                 class_id = int(np.argmax(class_scores))
-                score = conf * class_scores[class_id]
+                score = float(conf * class_scores[class_id])
 
                 if score >= self.conf_thres:
                     xc, yc, w, h = box[:4]
-                    x1 = int((xc - w / 2) * w_orig / self.width)
-                    y1 = int((yc - h / 2) * h_orig / self.height)
-                    x2 = int((xc + w / 2) * w_orig / self.width)
-                    y2 = int((yc + h / 2) * h_orig / self.height)
-                    
-                    label_name = DEFAULT_CLASSES[class_id] if class_id < len(DEFAULT_CLASSES) else f"class_{class_id}"
-                    detections.append({
-                        "bbox": [x1, y1, x2, y2],
-                        "confidence": float(score),
-                        "class_id": class_id,
-                        "label": label_name
-                    })
+                    # Coordinates are normalized (0.0 to 1.0)
+                    if xc <= 1.0 and yc <= 1.0 and w <= 1.0 and h <= 1.0:
+                        x1 = max(0, int((xc - w / 2) * w_orig))
+                        y1 = max(0, int((yc - h / 2) * h_orig))
+                        bw = min(w_orig - x1, int(w * w_orig))
+                        bh = min(h_orig - y1, int(h * h_orig))
+                    else:
+                        x1 = max(0, int((xc - w / 2) * w_orig / self.width))
+                        y1 = max(0, int((yc - h / 2) * h_orig / self.height))
+                        bw = min(w_orig - x1, int(w * w_orig / self.width))
+                        bh = min(h_orig - y1, int(h * h_orig / self.height))
+
+                    boxes_for_nms.append([x1, y1, bw, bh])
+                    scores_for_nms.append(score)
+                    class_ids_for_nms.append(class_id)
+
+            if boxes_for_nms:
+                indices = cv2.dnn.NMSBoxes(boxes_for_nms, scores_for_nms, self.conf_thres, self.iou_thres)
+                if len(indices) > 0:
+                    for i in indices.flatten():
+                        bx, by, bw, bh = boxes_for_nms[i]
+                        cid = class_ids_for_nms[i]
+                        sc = scores_for_nms[i]
+                        label_name = DEFAULT_CLASSES[cid] if cid < len(DEFAULT_CLASSES) else f"class_{cid}"
+                        detections.append({
+                            "bbox": [bx, by, bx + bw, by + bh],
+                            "confidence": round(sc, 4),
+                            "class_id": cid,
+                            "label": label_name
+                        })
 
         return detections, inference_time_ms
 
 
-def run_edge_surveillance(model_path, source, conf_thres, save_dir):
-    print(f"⚡ Initializing Edge TFLite Surveillance on model: {model_path}")
-    detector = TFLiteYOLO(model_path, conf_thres=conf_thres)
+def resolve_model_path(model_path: str) -> Path:
+    p = Path(model_path)
+    if p.exists():
+        return p
+    candidates = [
+        Path("models/best.tflite"),
+        Path("models/best-int8.tflite"),
+        Path("models/models_backup/best.tflite"),
+        Path("models/models_backup/best-int8.tflite"),
+    ]
+    for c in candidates:
+        if c.exists():
+            print(f"ℹ️ Requested '{model_path}' not found. Using available model: {c}")
+            return c
+    raise FileNotFoundError(f"TFLite model not found at {model_path} or candidate locations: {[str(c) for c in candidates]}")
+
+
+def run_edge_surveillance(model_path: str, source: str, conf_thres: float, save_dir: str, no_show: bool = False):
+    actual_model = resolve_model_path(model_path)
+    print(f"⚡ Initializing Edge TFLite Surveillance on model: {actual_model}")
+    detector = TFLiteYOLO(str(actual_model), conf_thres=conf_thres)
     # gpio_buzzer_pin=17 wires alerts to the physical siren on BCM GPIO17
     # (see docs/hardware-setup.md). Safely ignored on non-Pi devices.
     alert_mgr = AlertManager(cooldown_seconds=5, gpio_buzzer_pin=17)
+
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+    # Check if source is a single image
+    source_path = Path(source)
+    if source_path.is_file() and source_path.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp", ".webp"]:
+        frame = cv2.imread(str(source_path))
+        if frame is None:
+            raise RuntimeError(f"Cannot read image source: {source}")
+        detections, latency_ms = detector.predict(frame)
+        print(f"✅ Detection completed in {latency_ms:.1f}ms on {source_path.name}")
+        threats = [d for d in detections if d['label'].lower() in THREAT_CLASSES]
+        for d in detections:
+            print(f"   • {d['label'].upper()} ({d['confidence']*100:.1f}%) at {d['bbox']}")
+        out_path = Path(save_dir) / f"detected_tflite_{source_path.name}"
+        cv2.imwrite(str(out_path), frame)
+        print(f"📁 Output saved to: {out_path}")
+        return
 
     cap = cv2.VideoCapture(int(source) if str(source).isdigit() else source)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video source: {source}")
 
-    Path(save_dir).mkdir(parents=True, exist_ok=True)
     frame_count = 0
-    t_start = time.time()
-
     print("🟢 Edge Surveillance Loop Active. Press 'q' to stop.")
 
     while True:
@@ -168,9 +223,13 @@ def run_edge_surveillance(model_path, source, conf_thres, save_dir):
             cv2.imwrite(snap_path, frame)
             alert_mgr.trigger(snap_path)
 
-        cv2.imshow("Raspberry Pi Edge Surveillance", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        if not no_show:
+            try:
+                cv2.imshow("Raspberry Pi Edge Surveillance", frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            except Exception:
+                pass
 
     cap.release()
     cv2.destroyAllWindows()
@@ -184,6 +243,7 @@ if __name__ == "__main__":
     parser.add_argument("--source", type=str, default="0", help="Webcam 0 or video filepath/RTSP stream")
     parser.add_argument("--conf", type=float, default=0.45, help="Confidence threshold")
     parser.add_argument("--save-dir", type=str, default="outputs", help="Directory for threat snapshots")
+    parser.add_argument("--no-show", action="store_true", help="Run without UI window (headless mode)")
     args = parser.parse_args()
 
-    run_edge_surveillance(args.model, args.source, args.conf, args.save_dir)
+    run_edge_surveillance(args.model, args.source, args.conf, args.save_dir, args.no_show)

@@ -60,30 +60,70 @@ crime-detection-yolo/
 
 ## 🚀 Quick Start
 
-### 1. Python Environment Setup
+## ▶️ How to Run
+
+Open a terminal in the project root (`crime-detection-yolo/`), then follow these steps.
+
+### One-time setup (first time only)
+
 ```bash
-# Install core and backend dependencies
+cd /home/harish/crime-detection-yolo
 pip install -r requirements.txt
+npm --prefix dashboard install
 ```
 
-### 2. Start the Surveillance System
+### Every time you want to run the project
 
-You can run both the FastAPI backend server and the React dashboard simultaneously:
+You need **two terminals**.
 
-**Terminal 1 — Launch Backend Server:**
+**Terminal 1 — Backend (FastAPI + YOLO):**
+
 ```bash
-# Starts FastAPI server with CUDA YOLOv5 on http://localhost:8000
+cd /home/harish/crime-detection-yolo
 python3 -m uvicorn src.server:app --host 0.0.0.0 --port 8000 --reload
-# API Docs available at http://localhost:8000/docs
 ```
 
-**Terminal 2 — Launch Web Dashboard:**
+Or the short npm alias:
+
 ```bash
-# Starts React + Vite command center on http://localhost:5173
+cd /home/harish/crime-detection-yolo
+npm run server
+```
+
+**Terminal 2 — Dashboard (React):**
+
+```bash
+cd /home/harish/crime-detection-yolo
 npm run dev
 ```
 
-Open your browser at **`http://localhost:5173/`**.
+### Open in browser
+
+| What | URL |
+|------|-----|
+| **Dashboard (main UI)** | http://localhost:5173/ |
+| Backend API docs | http://localhost:8000/docs |
+| Backend status | http://localhost:8000/api/status |
+
+Leave both terminals running while you use the dashboard.
+
+### Stop the project
+
+Press `Ctrl + C` in each terminal.
+
+### Useful one-liners
+
+```bash
+# Detect on a sample image
+python3 src/detect.py --source data/samples/sample_gun_1.jpg --weights models/best.pt --conf 0.35
+
+# Live webcam from CLI
+python3 src/detect.py --source 0 --weights models/best.pt --conf 0.35
+
+# Evaluate model mAP
+python3 src/evaluate.py --weights models/best.pt --data data/data.yaml
+# or: npm run evaluate
+```
 
 ---
 

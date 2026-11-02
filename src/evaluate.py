@@ -37,8 +37,22 @@ def evaluate_model(weights_path: str, data_config: str, conf_thres: float = 0.35
         raise FileNotFoundError(f"Weights file not found at: {weights_path}")
 
     from val import run as val_run
+    from utils.callbacks import Callbacks
 
     device_str = device if device else ("0" if torch.cuda.is_available() else "cpu")
+
+    cb_metrics = {}
+    def on_val_end(nt, tp, fp, p, r, f1, ap, ap50, ap_class, confusion_matrix):
+        cb_metrics["nt"] = nt
+        cb_metrics["p"] = p
+        cb_metrics["r"] = r
+        cb_metrics["f1"] = f1
+        cb_metrics["ap50"] = ap50
+        cb_metrics["ap"] = ap
+        cb_metrics["ap_class"] = ap_class
+
+    cb = Callbacks()
+    cb.register_action("on_val_end", name="eval_capture", callback=on_val_end)
 
     results, maps, times = val_run(
         data=data_config,
@@ -51,6 +65,7 @@ def evaluate_model(weights_path: str, data_config: str, conf_thres: float = 0.35
         save_json=False,
         verbose=True,
         plots=True,
+        callbacks=cb,
         project="runs/val",
         name="evaluation_run",
         exist_ok=True,
@@ -62,14 +77,30 @@ def evaluate_model(weights_path: str, data_config: str, conf_thres: float = 0.35
     class_names = ["gun", "heavy-weapon", "knife"]
     class_metrics = {}
 
-    # If maps has per-class AP50
+    p_arr = cb_metrics.get("p", [])
+    r_arr = cb_metrics.get("r", [])
+    ap50_arr = cb_metrics.get("ap50", [])
+    ap_arr = cb_metrics.get("ap", [])
+    ap_cls = list(cb_metrics.get("ap_class", []))
+
     for idx, cls_name in enumerate(class_names):
-        cls_ap = float(maps[idx]) if idx < len(maps) else map50
+        if idx in ap_cls:
+            pos = ap_cls.index(idx)
+            cls_p = float(p_arr[pos]) if pos < len(p_arr) else float(mp)
+            cls_r = float(r_arr[pos]) if pos < len(r_arr) else float(mr)
+            cls_map50 = float(ap50_arr[pos]) if pos < len(ap50_arr) else float(map50)
+            cls_map = float(ap_arr[pos]) if pos < len(ap_arr) else float(map_all)
+        else:
+            cls_p = float(mp)
+            cls_r = float(mr)
+            cls_map50 = float(maps[idx]) if idx < len(maps) else float(map50)
+            cls_map = float(map_all)
+
         class_metrics[cls_name] = {
-            "precision": round(float(mp), 4),
-            "recall": round(float(mr), 4),
-            "map50": round(cls_ap, 4),
-            "map50_95": round(float(map_all), 4),
+            "precision": round(cls_p, 4),
+            "recall": round(cls_r, 4),
+            "map50": round(cls_map50, 4),
+            "map50_95": round(cls_map, 4),
         }
 
     results_summary = {

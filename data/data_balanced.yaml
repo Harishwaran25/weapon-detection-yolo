@@ -1,0 +1,9 @@
+# Balanced weapon dataset — oversampled knife/gun for accuracy fine-tune
+# Class names/order unchanged (matches models/best.pt)
+path: /home/harish/crime-detection-yolo/data_downloaded
+train: train_balanced/images
+val: valid/images
+test: valid/images
+
+nc: 3
+names: ['gun', 'heavy-weapon', 'knife']

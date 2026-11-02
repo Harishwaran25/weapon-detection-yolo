@@ -1,0 +1,60 @@
+{
+  "pass": 9,
+  "total": 9,
+  "details": [
+    {
+      "sample": "sample_gun_1.jpg",
+      "expected": "gun",
+      "detected": "gun",
+      "confidence": 0.8965
+    },
+    {
+      "sample": "sample_gun_2.jpg",
+      "expected": "gun",
+      "detected": "gun",
+      "confidence": 0.8957
+    },
+    {
+      "sample": "sample_gun_3.jpg",
+      "expected": "gun",
+      "detected": "gun",
+      "confidence": 0.8921
+    },
+    {
+      "sample": "sample_heavy-weapon_1.jpg",
+      "expected": "heavy-weapon",
+      "detected": "heavy-weapon",
+      "confidence": 0.9244
+    },
+    {
+      "sample": "sample_heavy-weapon_2.jpg",
+      "expected": "heavy-weapon",
+      "detected": "heavy-weapon",
+      "confidence": 0.916
+    },
+    {
+      "sample": "sample_heavy-weapon_3.jpg",
+      "expected": "heavy-weapon",
+      "detected": "heavy-weapon",
+      "confidence": 0.9115
+    },
+    {
+      "sample": "sample_knife_1.jpg",
+      "expected": "knife",
+      "detected": "knife",
+      "confidence": 0.9801
+    },
+    {
+      "sample": "sample_knife_2.jpg",
+      "expected": "knife",
+      "detected": "knife",
+      "confidence": 0.9575
+    },
+    {
+      "sample": "sample_knife_3.jpg",
+      "expected": "knife",
+      "detected": "knife",
+      "confidence": 0.9523
+    }
+  ]
+}

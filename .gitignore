@@ -15,3 +15,8 @@ dashboard/dist/
 datasets/
 models/best-int8.tflite
 models/best_saved_model/
+models/
+yolov5s.pt
+outputs/*.log
+**/labels.cache
+weapon-detection-yolo-main/
