@@ -28,10 +28,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-# Ensure YOLOv5 is in sys.path
-YOLOV5_DIR = Path(__file__).resolve().parent.parent / "yolov5"
-if str(YOLOV5_DIR) not in sys.path:
-    sys.path.append(str(YOLOV5_DIR))
+# Ensure src/ and YOLOv5 are on sys.path
+SRC_DIR = Path(__file__).resolve().parent
+YOLOV5_DIR = SRC_DIR.parent / "yolov5"
+for p in (SRC_DIR, YOLOV5_DIR):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
 
 # Ensure outputs directories exist
 OUTPUTS_DIR = Path("outputs")
@@ -96,17 +98,94 @@ class ModelWrapper:
                 print(f"❌ Fallback loading failed: {e2}")
                 self.model = None
 
+    @staticmethod
+    def _iou(a, b) -> float:
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+        inter = iw * ih
+        if inter <= 0:
+            return 0.0
+        area_a = max(1, (ax2 - ax1) * (ay2 - ay1))
+        area_b = max(1, (bx2 - bx1) * (by2 - by1))
+        return inter / float(area_a + area_b - inter)
+
+    @classmethod
+    def _merge_fragmented(cls, detections: List[Dict[str, Any]], frame_wh: tuple) -> List[Dict[str, Any]]:
+        """Merge nearby same-class fragments (common for thin knives) into one box."""
+        if len(detections) <= 1:
+            return detections
+
+        w, h = frame_wh
+        diag = float(max(w, h))
+        # Knives fragment often — use a looser spatial merge radius
+        merge_labels = {"knife"}
+        kept: List[Dict[str, Any]] = []
+        used = [False] * len(detections)
+
+        # Process high-confidence first
+        order = sorted(range(len(detections)), key=lambda i: detections[i]["confidence"], reverse=True)
+        for i in order:
+            if used[i]:
+                continue
+            base = dict(detections[i])
+            used[i] = True
+            label = base["label"]
+            if label not in merge_labels:
+                kept.append(base)
+                continue
+
+            bx1, by1, bx2, by2 = base["bbox"]
+            conf = float(base["confidence"])
+            members = 1
+            bcx, bcy = (bx1 + bx2) / 2.0, (by1 + by2) / 2.0
+
+            for j in order:
+                if used[j] or detections[j]["label"] != label:
+                    continue
+                ox1, oy1, ox2, oy2 = detections[j]["bbox"]
+                ocx, ocy = (ox1 + ox2) / 2.0, (oy1 + oy2) / 2.0
+                dist = ((ocx - bcx) ** 2 + (ocy - bcy) ** 2) ** 0.5
+                iou = cls._iou(base["bbox"], detections[j]["bbox"])
+                # Horizontal adjacency (blade + handle often split)
+                gap_x = max(0, max(ox1 - bx2, bx1 - ox2))
+                y_overlap = max(0, min(by2, oy2) - max(by1, oy1))
+                min_h = max(1, min(by2 - by1, oy2 - oy1))
+                adjacent = gap_x <= 0.15 * diag and y_overlap >= 0.2 * min_h
+                # Merge if overlapping, nearby centroids, or adjacent blade/handle pieces
+                if iou >= 0.05 or dist <= 0.35 * diag or adjacent:
+                    bx1, by1 = min(bx1, ox1), min(by1, oy1)
+                    bx2, by2 = max(bx2, ox2), max(by2, oy2)
+                    conf = max(conf, float(detections[j]["confidence"]))
+                    members += 1
+                    used[j] = True
+                    bcx, bcy = (bx1 + bx2) / 2.0, (by1 + by2) / 2.0
+                    base["bbox"] = [bx1, by1, bx2, by2]
+
+            base["bbox"] = [int(bx1), int(by1), int(bx2), int(by2)]
+            base["confidence"] = round(conf, 4)
+            if members > 1:
+                base["mergedFragments"] = members
+            kept.append(base)
+
+        kept.sort(key=lambda d: d["confidence"], reverse=True)
+        return kept
+
     def predict(self, frame_bgr: np.ndarray, conf_thres: float = 0.25, iou_thres: float = 0.45, imgsz: int = 640):
         if self.model is None:
             return [], frame_bgr, False, None, 0.0
 
         t0 = time.perf_counter()
-        self.model.conf = conf_thres
+        # Knife is under-represented — run a slightly lower floor then re-filter per class
+        knife_floor = min(conf_thres, 0.18)
+        self.model.conf = min(conf_thres, knife_floor)
         self.model.iou = iou_thres
         self.model.max_det = 50
 
-        # Convert BGR to RGB
-        frame_rgb = frame_bgr[:, :, ::-1]
+        # Contiguous RGB copy avoids letterbox/coord edge cases with negative strides
+        frame_rgb = np.ascontiguousarray(frame_bgr[:, :, ::-1])
         results = self.model(frame_rgb, size=int(imgsz))
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
@@ -116,28 +195,28 @@ class ModelWrapper:
         top_threat = None
         max_threat_conf = 0.0
 
-        annotated = frame_bgr.copy()
         h, w = frame_bgr.shape[:2]
 
         CLASS_MAP = {0: "gun", 1: "heavy-weapon", 2: "knife"}
         for _, row in df.iterrows():
             conf = float(row["confidence"])
-            if conf < conf_thres:
-                continue
-
             cid = int(row["class"]) if "class" in row else 0
             label = CLASS_MAP.get(cid, str(row.get("name", cid)).lower())
-            x1, y1 = max(0, int(row["xmin"])), max(0, int(row["ymin"]))
-            x2, y2 = min(w, int(row["xmax"])), min(h, int(row["ymax"]))
+
+            # Per-class confidence: knives need a lower threshold
+            min_conf = knife_floor if label == "knife" else conf_thres
+            if conf < min_conf:
+                continue
+
+            x1 = max(0, int(round(float(row["xmin"]))))
+            y1 = max(0, int(round(float(row["ymin"]))))
+            x2 = min(w, int(round(float(row["xmax"]))))
+            y2 = min(h, int(round(float(row["ymax"]))))
+            if x2 <= x1 or y2 <= y1:
+                continue
+
             is_threat = label in THREAT_CLASSES
-
             severity = "CRITICAL" if label in ["gun", "heavy-weapon"] else "HIGH" if label == "knife" else "MEDIUM"
-
-            if is_threat:
-                has_threat = True
-                if conf > max_threat_conf:
-                    max_threat_conf = conf
-                    top_threat = label
 
             detections.append({
                 "bbox": [x1, y1, x2, y2],
@@ -147,24 +226,36 @@ class ModelWrapper:
                 "severity": severity,
             })
 
-            # High-tech stylized annotation on frame
-            box_color = (40, 40, 245) if is_threat else (50, 205, 50)  # Red for threat, Green for normal
+        detections = self._merge_fragmented(detections, (w, h))
+
+        annotated = frame_bgr.copy()
+        for det in detections:
+            x1, y1, x2, y2 = det["bbox"]
+            label = det["label"]
+            conf = det["confidence"]
+            is_threat = det["isThreat"]
+
+            if is_threat and conf > max_threat_conf:
+                max_threat_conf = conf
+                top_threat = label
+                has_threat = True
+            elif is_threat:
+                has_threat = True
+
+            box_color = (40, 40, 245) if is_threat else (50, 205, 50)
             cv2.rectangle(annotated, (x1, y1), (x2, y2), box_color, 2)
 
-            # Header label pill
             tag_text = f" {label.upper()} {conf * 100:.1f}% "
             font = cv2.FONT_HERSHEY_SIMPLEX
-            (tw, th), baseline = cv2.getTextSize(tag_text, font, 0.5, 1)
+            (tw, th), _ = cv2.getTextSize(tag_text, font, 0.5, 1)
             cv2.rectangle(annotated, (x1, max(0, y1 - th - 8)), (x1 + tw + 4, max(y1, th + 8)), box_color, -1)
             cv2.putText(annotated, tag_text, (x1 + 2, max(y1 - 4, th)), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
-            # If threat, add corner brackets & center reticle
             if is_threat:
                 cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
                 cv2.circle(annotated, (cx, cy), 5, (40, 40, 245), -1)
                 cv2.circle(annotated, (cx, cy), 16, (40, 40, 245), 1)
 
-        # Highest-confidence detections first for dashboard display
         detections.sort(key=lambda d: d["confidence"], reverse=True)
         return detections, annotated, has_threat, top_threat, latency_ms
 
@@ -290,7 +381,7 @@ async def detect_uploaded_file(
         raise HTTPException(status_code=400, detail="Invalid image file")
 
     detections, annotated, has_threat, top_threat, latency_ms = model_wrapper.predict(
-        frame, conf_thres=conf, iou_thres=iou
+        frame, conf_thres=conf, iou_thres=iou, imgsz=640
     )
 
     threat_score, urgency_level, urgency_msg, detections = temporal_tracker.update_and_score(
@@ -351,7 +442,7 @@ def detect_base64_frame(req: FrameRequest):
         raise HTTPException(status_code=400, detail="Cannot decode image frame")
 
     detections, annotated, has_threat, top_threat, latency_ms = model_wrapper.predict(
-        frame, conf_thres=req.conf, iou_thres=req.iou
+        frame, conf_thres=req.conf, iou_thres=req.iou, imgsz=640
     )
 
     threat_score, urgency_level, urgency_msg, detections = temporal_tracker.update_and_score(
@@ -570,7 +661,7 @@ def detect_sample(filename: str, conf: float = 0.25, iou: float = 0.45):
         raise HTTPException(status_code=400, detail="Cannot read sample file")
 
     detections, annotated, has_threat, top_threat, latency_ms = model_wrapper.predict(
-        frame, conf_thres=conf, iou_thres=iou
+        frame, conf_thres=conf, iou_thres=iou, imgsz=640
     )
 
     threat_score, urgency_level, urgency_msg, detections = temporal_tracker.update_and_score(

@@ -44,6 +44,9 @@ export const LiveSurveillance: React.FC<LiveSurveillanceProps> = ({
   const activeThreatRef = useRef<string | null>(null);
   const soundEnabledRef = useRef(soundEnabled);
   const onNewAlertRef = useRef(onNewAlert);
+  // Inference frame size from server (boxes are in this coordinate space)
+  const inferSizeRef = useRef<{ w: number; h: number } | null>(null);
+  const sendSizeRef = useRef<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
     detectionsRef.current = detections;
@@ -103,6 +106,9 @@ export const LiveSurveillance: React.FC<LiveSurveillanceProps> = ({
           }
           if (typeof data.fps === 'number') {
             setFps(data.fps);
+          }
+          if (Array.isArray(data.frame_wh) && data.frame_wh.length === 2) {
+            inferSizeRef.current = { w: Number(data.frame_wh[0]), h: Number(data.frame_wh[1]) };
           }
           if (Array.isArray(data.detections)) {
             setDetections(data.detections);
@@ -245,14 +251,20 @@ export const LiveSurveillance: React.FC<LiveSurveillanceProps> = ({
           const dets = detectionsRef.current;
           const conf = confThresholdRef.current;
 
-          // Overlay boxes (display only — not sent to model)
+          // Overlay boxes — scale from inference frame size → display canvas size
           if (showOverlayRef.current && dets.length > 0) {
+            const infer = inferSizeRef.current || sendSizeRef.current;
+            const sx = infer && infer.w > 0 ? canvas.width / infer.w : 1;
+            const sy = infer && infer.h > 0 ? canvas.height / infer.h : 1;
+
             dets.forEach((det) => {
               if (det.confidence < conf) return;
 
-              const [x1, y1, x2, y2] = det.bbox;
-              const w = x2 - x1;
-              const h = y2 - y1;
+              const [rx1, ry1, rx2, ry2] = det.bbox;
+              const x1 = rx1 * sx;
+              const y1 = ry1 * sy;
+              const w = (rx2 - rx1) * sx;
+              const h = (ry2 - ry1) * sy;
               const isThreat = det.isThreat;
 
               ctx.strokeStyle = isThreat ? '#ef4444' : '#10b981';
@@ -336,13 +348,14 @@ export const LiveSurveillance: React.FC<LiveSurveillanceProps> = ({
             !waitingForReplyRef.current &&
             nowMs - lastSendTimeRef.current > minIntervalMs
           ) {
-            // Downscale for faster upload/inference
+            // Downscale for faster upload/inference (boxes come back in this space)
             const maxW = 640;
             const scale = Math.min(1, maxW / vw);
             const sw = Math.round(vw * scale);
             const sh = Math.round(vh * scale);
             sendCanvas.width = sw;
             sendCanvas.height = sh;
+            sendSizeRef.current = { w: sw, h: sh };
             const sctx = sendCanvas.getContext('2d');
             if (sctx) {
               sctx.drawImage(video, 0, 0, sw, sh);
@@ -355,7 +368,7 @@ export const LiveSurveillance: React.FC<LiveSurveillanceProps> = ({
                     image: b64,
                     conf: confThresholdRef.current,
                     iou: 0.45,
-                    imgsz: 512,
+                    imgsz: 640,
                     cameraId: 'LIVE_WEBCAM',
                   })
                 );
